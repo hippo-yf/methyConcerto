@@ -1,0 +1,915 @@
+
+
+
+library(matrixStats)
+library(tidyverse)
+library(magrittr)
+
+library(ggthemes)
+library(ggpubr)
+library(MASS)
+library(pheatmap)
+library(e1071)
+library(quantreg)
+library(splines)
+library(Matrix)
+library(sparseMatrixStats)
+library(lattice)
+
+library(GenomicFeatures)
+library(Biostrings)
+library(Rsamtools)
+library(BSgenome.Sscrofa.UCSC.susScr11)
+
+library(umap)
+library(Rtsne)
+library(kernlab)
+
+
+## SNV sites
+
+snv = read_delim('bs_snv_cgmaptools_bayes.snv.gz', 
+                 delim = '\t', 
+                 col_names = T, 
+                 col_types = cols(`#chr` = col_character()),
+                 num_threads = 8
+                 )
+colnames(snv)[1] = 'chr'
+
+
+snv = read_delim('merge_bs_snv_caller.bssnv.simple2', 
+                 delim = '\t', 
+                 col_names = F, 
+                 col_types = cols(X1 = col_character()),
+                 num_threads = 8
+)
+names(snv)[c(1:3, 8)] = c('chr', 'nuc', 'pos', 'sample')
+
+# snv = snv[sample.int(nrow(snv), 1e4), ]
+
+
+
+# snv.count = snv %>% group_by(chr, pos) %>%
+#   summarise(count.snv = n())
+#   # arrange(desc(count))
+# 
+# 
+# snv.is_asm = snv %>% subset(multi_in(bind_cols(chr, pos),  asm.consesus[asm.consesus$is_snv, c('chr', 'pos')]))
+# 
+# snv.is_asm.summ = snv.is_asm %>%
+#   group_by(chr, nuc, pos, predicted_nuc) %>%
+#   summarise(count.snv = n())
+
+
+
+# methpipe allelicmeth
+asm.allelicmeth = read_delim('ASM_site_methpipe_allelicmeth_DP_merge.asm', 
+                             delim = '\t', 
+                             col_names = F,
+                             num_threads = 8
+                             )
+colnames(asm.allelicmeth) = c('chr', 'pos', 'strand', 'CpG', 'p_value', 'dp', 'MM', 'MU', 'UM', 'UU', 'sample')
+
+# asm.allelicmeth = asm.allelicmeth[sample.int(nrow(asm.allelicmeth), 5e4), ]
+
+
+## both covered at least 5 reads
+sDP = 5
+# asm.allelicmeth %<>% subset((MM>=sDP & UU>=sDP) | (MU>=sDP & UM>=sDP))
+
+asm.allelicmeth %<>% 
+  mutate(is_asm = (p_value < 1e-3) & ((MM>=sDP & UU>=sDP) | (MU>=sDP & UM>=sDP)),
+         pos = pos + 1,
+         # nuc = 'C',
+         CpG_id = 1:nrow(.),
+         strand = NULL,
+         CpG = NULL
+  )
+
+# summary of each sample
+asm.count = asm.allelicmeth %>% 
+  group_by(sample) %>%
+  summarise(count.CG = n(), count.asm = sum(is_asm), pi = count.asm/count.CG)
+
+
+asm.allelicmeth = asm.allelicmeth %>% 
+  # subset(is_asm) %>% 
+  bind_rows(mutate(., pos = pos + 1, 
+                   # nuc = 'G'
+  ))
+
+# asm.allelicmeth %<>% arrange(sample, chr, pos)
+
+snv.cg = snv %>% 
+  mutate(is_snv = T) %>% 
+  subset(nuc %in% c('C', 'G')) %>%
+  dplyr::select(c(chr, pos, sample, is_snv))
+
+asm.allelicmeth = asm.allelicmeth %>%
+  group_by(sample) %>%
+  group_modify(
+    ~ merge(.x, snv.cg %>% subset(.$sample == .y$sample, select = -sample),
+            by = c('chr', 'pos'),
+            all.x = T,
+            sort = F)) %>%
+  ungroup
+
+# asm.allelicmeth = bind_rows(asm.allelicmeth)
+
+asm.allelicmeth %<>% replace_na(list(is_snv = F))
+
+is_snv = asm.allelicmeth %>% group_by(CpG_id) %>%
+  summarise(is_snv = any(is_snv)) %>%
+  arrange(CpG_id)
+  
+# asm.allelicmeth = merge(asm.allelicmeth %>% subset(duplicated(.$CpG_id)),
+#                         is_snv)
+
+asm1 = asm.allelicmeth %>% subset(duplicated(.$CpG_id)) %>%
+  arrange(CpG_id) %>%
+  mutate(is_snv = NULL)
+
+asm.allelicmeth = bind_cols(asm1, is_snv[, "is_snv"])
+
+
+
+# asm.count = asm.allelicmeth %>% 
+#   subset(is_asm) %>%
+#   group_by(chr, pos) %>%
+#   summarise(count.asm = n())
+
+prop = asm.count$pi %>% set_names(asm.count$sample)
+
+
+# mark pi of Ber(pi) of each CpG site covered
+asm.allelicmeth %<>% mutate(pi = prop[sample])
+
+## CpG table with asm marked
+
+CpG_with_asm = asm.allelicmeth %>%
+  group_by(chr, pos) %>%
+  summarise(chi.sq = sum(-log(p_value)*(!is_snv)),
+            count.cov = n(),
+            count.asm = sum(is_asm),
+            count.snv = sum(is_snv),
+            lambda = sum(pi*(!is_snv))
+            ) %>%
+  ungroup
+
+## test each CpG is a consistent ASM site 
+
+# using Chi square test of the sum of p.values
+CpG_with_asm %<>% mutate(p_chisq = pchisq(chi.sq, df = count.cov - count.snv, lower.tail = F))
+
+
+####################################################
+## counting in each grouped samples
+## Category I/II
+
+# add category 
+grouping = read_csv('../maturation-grouping.csv')
+asm.allelicmeth %<>% merge(grouping %>% dplyr::select(c(sample, Category)), by = 'sample')
+
+# save(asm.allelicmeth, file = 'asm.allelicmeth-category-bssnv-caller.RData', compression_level = 3)
+
+
+## CpG table with asm marked
+
+CpG_with_asm = asm.allelicmeth %>%
+  subset(Category %in% c('Type I (NSN)', 'Type II (SN)')) %>%
+  group_by(Category, chr, pos) %>%
+  summarise(chi.sq = sum(-log(p_value)*(!is_snv)),
+            count.cov = n(),
+            count.asm = sum(is_asm),
+            count.snv = sum(is_snv),
+            lambda = sum(pi*(!is_snv))
+  ) %>%
+  ungroup
+
+## using a Pois dist of the asm count
+CpG_with_asm %<>% mutate(p_pois = ppois(count.asm - count.snv, lambda = lambda, lower.tail = F))
+
+# CpG_with_asm %<>% mutate(X4 = NULL) %>%
+#   set_colnames(c('chr', 'CpG_start', 'CpG_end', 'gene_start', 'gene_end', 'gene_strand', 
+#                  'gene_id', 'gene_symbol', 'gene_biotype'))
+
+
+# save(CpG_with_asm, file = 'asm_CpG.by.category-with-bssnv-SNV.Rdata')
+
+
+
+#####################################################################################################
+
+## consistent ASM sites
+
+asm.cons = CpG_with_asm %>% subset(p_pois < 0.001 & 
+                                     lambda > 0 & 
+                                     count.cov >= 10 &
+                                     (count.asm-count.snv) >= 5 &
+                                     (count.asm-count.snv)/(count.cov-count.snv) >= 0.7
+                                   )
+
+#### mark common ASM CpGs in two categories
+
+i = duplicated(asm.cons[, c('chr', 'pos')])
+sites = paste0(asm.cons$chr, ';', asm.cons$pos)
+
+asm.cons$intersected = sites %in% sites[i]
+
+# write_tsv(asm.cons, file = 'asm.consensus-category-bssnv-caller.tsv')
+
+asm.cons = read_delim('asm.consensus-category-bssnv-caller.tsv')
+
+
+# asm CpGs common in two categories
+asm.cons = read_delim('asm.consensus-category-bssnv-caller.tsv') %>%
+  subset(intersected) %>%
+  subset(Category == "Type I (NSN)")
+
+
+# table(asm.cons$Category)
+
+asm.cons %<>% subset(chr != 'MT')
+
+# save summary table
+table.asm.cons = table(asm.cons[, c('Category', 'intersected', 'chr')]) %>% as.data.frame
+write_tsv(table.asm.cons, 'summary-table-asm-category.tsv')
+
+
+########
+## write to .bed file
+## for element anno
+
+asm.cons.bed = asm.cons %>% 
+  transmute(
+    chr = chr,
+    start = pos,
+    end = start + 1,
+    
+  )
+
+write_delim(asm.cons.bed, 'consistent.asm.common.in.two.categories.bed', delim = '\t', col_names = F)
+
+
+# type I/II
+
+asm.cons.bed = asm.cons %>% 
+  subset(Category == 'Type I (NSN)') %>%
+  transmute(
+    chr = chr,
+    start = pos,
+    end = start + 1,
+    
+  )
+
+
+# type II increment
+
+asm.cons.bed = asm.cons %>% 
+  subset(Category == 'Type II (SN)' & !intersected) %>%
+  transmute(
+  chr = chr,
+  start = pos,
+  end = start + 1,
+  
+)
+
+write_delim(asm.cons.bed, 'consistent.asm.category-II.increment.bed', delim = '\t', col_names = F)
+
+# save asm CpGs by category
+asm.cons.bed = asm.cons %>% 
+  transmute(
+    chr = chr,
+    start = pos,
+    end = start + 1,
+    Category = Category
+  )
+
+write_delim(asm.cons.bed, 'consistent.asm.by.category.bed', delim = '\t', col_names = F)
+
+
+
+###########################################################################
+## promoter bed
+
+
+d = read_csv('pig11.1_gene_table.csv')
+# write_delim(d, 'sus11.1-ensembl-gene', col_names = F, delim = '\t')
+
+pro = d
+pro$start.p = pro$start -2000
+pro$end.p = pro$start + 500
+
+pro$start.p[pro$strand=='-'] = pro$end[pro$strand=='-'] -500
+pro$end.p[pro$strand=='-'] = pro$end[pro$strand=='-'] + 2000
+
+pro %<>% subset(start.p > 0 & end.p > 0)
+
+pro = pro[, c(1,8,9,4:7)]
+
+write_delim(pro, 'sus11.1-ensembl-promoter-2k5', col_names = F, delim = '\t')
+
+
+#############################################################
+## annotation  of ASM sites
+
+d = read_delim('consistent.asm.anno.sus11.1-ensembl-gene.bed', delim = '\t', col_names = F)
+
+
+## merge annotation results
+
+read_anno_file <- function(f){
+  
+  map1 = c('CpGisland', 'RepeatMasker', '3utr-exon', '5utr-exon', 'coding-exon', 'ensembl-gene', 'intron', 'promoter')
+  map2 = c('CpGisland', 'repeat', '3utr-exon', '5utr-exon', 'coding-exon', 'gene-body', 'intron', 'promoter')
+  
+  d = read_delim(f, delim = '\t', col_names = F, show_col_types = F)
+  d %<>% mutate(X4 = NULL) %>%
+    
+    set_colnames(c('chr', 'CpG_start', 'CpG_end', 'feature_start', 'feature_end', 
+                   paste0('ex', 1:(ncol(d)-5)))
+                 )
+  d[-(1:5)] %<>% lapply(as.character)
+  i = str_match(f, map1) %>% is.na %>% not %>% which
+  if (length(i) == 0)
+    d %<>% mutate(type = 'others', .after = 5)
+  else
+    d %<>% mutate(type = map2[i], .after = 5)
+  return(d)
+}
+  
+read_anno_file_2 <- function(f){
+  
+  map1 = c('CpGisland', 'RepeatMasker', '3utr-exon', '5utr-exon', 'coding-exon', 'ensembl-gene', 'intron', 'promoter')
+  map2 = c('CpGisland', 'repeat', '3utr-exon', '5utr-exon', 'coding-exon', 'gene-body', 'intron', 'promoter')
+  
+  d = read_delim(f, delim = '\t', col_names = F, show_col_types = F)
+  d %<>% mutate(X5 = NULL) %>%
+    
+    set_colnames(c('chr', 'CpG_start', 'CpG_end', 'Category', 'feature_start', 'feature_end', 
+                   paste0('ex', 1:(ncol(d)-6)))
+    )
+  d[-(1:6)] %<>% lapply(as.character)
+  i = str_match(f, map1) %>% is.na %>% not %>% which
+  if (length(i) == 0)
+    d %<>% mutate(type = 'others', .after = 6)
+  else
+    d %<>% mutate(type = map2[i], .after = 6)
+  return(d)
+}
+# fs = list.files(pattern = 'consistent.asm.anno.*.bed')
+
+fs = paste0('consistent.asm.bssnv-caller.anno.', c('CpGisland-unmask', 'RepeatMasker', 'six-elements'), 
+            '.by.category',
+            '.bed')
+
+asm.anno1 = bind_rows(lapply(fs[1:2], read_anno_file_2))
+
+asm.anno2 = read_anno_file_2(fs[3]) %>%
+  mutate(type = ex1,
+         ex1 = NULL)
+
+asm.anno = bind_rows(asm.anno1, asm.anno2)
+
+asm.anno %<>% arrange(chr, CpG_start)
+
+asm.anno %<>% subset(chr != 'MT')
+
+asm.anno %<>% group_by(chr, CpG_start) %>%
+  mutate(CpG_ID  = cur_group_id(), .after = CpG_end) %>%
+  ungroup
+
+asm.anno %<>% subset(type %in% 
+  c("CDS", "exon", "intron", "gene", "five_prime_utr", "three_prime_utr", "promoter", "CpGisland", "repeat"))
+
+# write_csv(asm.anno, 'consistent.CpG.asm.by.category.bssnv-caller.anno.merge.csv')
+
+# asm.anno = read_csv('consistent.CpG.asm.by.category.bssnv-caller.anno.merge.csv')
+
+
+## count summary
+
+feature_cross_counting <- function(asm.anno){
+  
+  
+  # summ1 = asm.anno %>% group_by(type) %>%
+  #   summarise(count = length(unique(CpG_ID)))
+  
+  summ2 = asm.anno %>% dplyr::select(CpG_ID, type) %>%
+    # subset(duplicated(paste0(CpG_ID, ';', type)) %>% not) %>%
+    unique %>%
+    group_by(CpG_ID, type) %>%
+    summarise(value = 1) %>%
+    pivot_wider(names_from = type, values_from = value)
+  
+  # write_delim(summ2, 'CpG.asm.dist.csv')
+  
+  sm2 = summ2[,-1] %>% as.matrix
+  sm2[is.na(sm2)] = 0
+  
+  summ2.intersect = t(sm2) %*% sm2
+  
+  # sort features
+  ord = order(diag(summ2.intersect), decreasing = T)
+  summ2.intersect = summ2.intersect[ord, ord]
+  
+  summ2.intersect
+}
+
+cross.counting = feature_cross_counting(asm.anno %>% subset(Category == 'Type II (SN)'))
+
+
+pheatmap(cross.counting, cluster_rows = F, cluster_cols = F, 
+         scale = 'none', 
+         display_numbers = T,
+         number_format = '%d',
+         cellwidth = 35,
+         cellheight = 35,
+         fontsize_number = 10)
+
+## enrichment
+
+genes.pro = asm.anno %>% subset(type == 'promoter') %>% subset(ex5 == 'protein_coding')
+t.pro = table(genes.pro$ex3)
+ns = t.pro[t.pro >= 5] %>% names
+
+genes.pro %<>%
+  subset(ex3 %in% ns) %>%
+  subset(!duplicated(.$ex3))
+
+write_csv(genes.pro, 'genes.with.CpG.asm.ge5.category-II.increment.at.promoter.csv')
+
+# counting ASM CpGs of genes at promoter/gene body
+
+genes.pro = asm.anno %>% subset(type %in% c('promoter', 'gene'))
+genes.pro %<>% group_by(chr, Category, type, ex3, ex4, ex5) %>%
+  summarise(nCpGs = n()) %>%
+  subset(nCpGs >= 5) %>%
+  group_by(type) %>%
+  group_modify(~ mutate(.x, intersection = !is_unique(.x$ex3)))
+
+
+write_tsv(genes.pro, 'genes.counting.asm.CpG.ge5.tsv')
+
+
+# subsetting asm in each feature
+
+genes.genebody = asm.anno %>% subset(type == 'gene') %>%
+  subset(!duplicated(.$ex3))
+
+write_csv(genes.genebody, 'genes.with.CpG.asm.category-II.increment.at.genebody.csv')
+
+genes.exon = asm.anno %>% subset(type == 'exon') %>%
+  subset(!duplicated(.$ex3))
+
+write_csv(genes.exon, 'genes.with.CpG.asm.at.exon.csv')
+
+genes.intron = asm.anno %>% subset(type == 'intron') %>%
+  subset(!duplicated(.$ex3))
+
+write_csv(genes.intron, 'genes.with.CpG.asm.at.intron.csv')
+
+genes.CDS = asm.anno %>% subset(type == 'CDS') %>%
+  subset(!duplicated(.$ex3))
+
+write_csv(genes.CDS, 'genes.with.CpG.asm.at.CDS.csv')
+
+genes.UTR = asm.anno %>% subset(type %in% c('five_prime_utr', 'three_prime_utr')) %>%
+  subset(!duplicated(.$ex3))
+
+write_csv(genes.UTR, 'genes.with.CpG.asm.at.UTR.csv')
+
+
+# genes.intron = asm.anno %>% subset(type == 'intron' & ex4 == 'protein_coding') %>%
+#   subset(!duplicated(.$ex2))
+# 
+# write_csv(genes.genebody, 'coding.genes.with.CpG.asm.at.genebody.csv')
+
+## barplot of asm in repeat elements
+
+locus.repeat = asm.anno %>% subset(type == 'repeat') %>%
+  subset(!duplicated(paste0(feature_start, ';', feature_end)))
+
+write_csv(locus.repeat, 'repeat.locus.with.CpG.asm.common.in.two.categories.csv')
+
+repeat.most = sort(table(locus.repeat$ex1), decreasing = T)[1:15]
+barchart(repeat.most, col = '#00A8E8')
+
+## enrichment plot
+
+pathways = read_csv('kegg.enrich.genes.asm.CpG.ge5.promoter.unique.in.category-II-filtering-for-viz.csv')
+colnames(pathways)[2] (c('Term', 'ID', 'Input', 'Background', 'p.value', 'p_adjust')) 
+
+pathways %<>% mutate(rich_factor = `Input number`/`Background number`) %>%
+  arrange(intersection, `P-Value`)
+
+yorder <- pathways$Term
+
+ggplot(pathways, aes(rich_factor, Term)) +
+  geom_point(aes(size = `Input number`, color = `P-Value`)) +
+  #scale_color_gradient(low = "#DC0000FF", high = "yellow") +
+  scale_color_gradient(low = "red", high = "blue") +
+  guides(size = guide_legend(override.aes = list(color = "red")),
+         color = guide_colorbar(reverse = TRUE)) +
+  scale_y_discrete(limits = yorder,
+                   labels = function(x)str_wrap(x, width = 25)
+  ) +
+  # xlim(0.07,0.53) +
+  theme_bw() +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_blank(),
+    axis.text = element_text(color = "black")) +
+  ylab("")
+
+
+
+
+
+# DISCARDED
+###########################################
+# window scatterplot on a chromosome
+###########################################
+
+
+# smoothScatter(-log10(CpG_with_asm$p_pois), -log10(CpG_with_asm$p_chisq), nbin = 128)
+
+plot(density(sample(CpG_with_asm$p_pois, size = 1e5)))
+
+
+win.len = 50e3
+asm.count %<>%
+  group_by(chr) %>%
+  mutate(cut = cut(pos, seq(min(pos)-1, (ceiling(max(pos)/win.len)+1)*win.len, by = win.len), labels = F))
+
+asm.count.ave = asm.count %>% 
+  group_by(chr, cut) %>%
+  summarise(count.asm = mean(count.asm))
+
+asm.count.ave %>%
+  subset(chr != 'MT') %>%
+  # mutate(count = log2(count)) %>%
+  ggplot(aes(cut, count.asm)) + 
+  geom_point(pch = '.', alpha = 0.5) +
+  # geom_smooth(
+  #   method = rq,
+  #   # span = 1,
+  #   # formula = y~x,
+  #             formula = y ~ splines::bs(x, df = ceiling(length(x)/50)),
+  #             se = F, color = '#E71D36', size = 0.3, alpha = 0.4) +
+  facet_wrap(~chr, ncol = 1, scales = 'fixed') +
+  theme_classic()
+  
+
+asm.count.ave.chr = asm.count.ave %>% subset(chr == '2')
+x = asm.count.ave.chr$cut
+y = asm.count.ave.chr$count
+# y = log2(asm.count.ave.chr$count + 1)
+plot(x, y, pch = '.', col = 'gray30')
+lines(x, runmed(y, k = 31), col = rgb(46, 196, 182, 200, maxColorValue = 255), lwd = 2)
+# lines(rq(y~bs(x, df = 1e2)), col = '#E71D36', lwd = 1)
+
+
+asm.consesus = asm.count %>% subset(count.asm >= 40) %>%
+  subset(chr != 'MT') %>%
+  mutate(nuc = 'C')
+
+# methpipe seems to be 0-based
+asm.consesus %<>% mutate(pos = pos + 1)
+
+# add adjacent G
+asm.consesus = bind_rows(asm.consesus,
+                         asm.consesus %>% mutate(nuc = 'G', pos = pos + 1)
+)
+asm.consesus %<>% arrange(chr, pos, nuc)
+
+
+# ASM sites contain SNV
+asm.consesus %<>% ungroup %>% mutate(is_snv = multi_in(bind_cols(chr, pos), snv.count[,c('chr', 'pos')]))
+
+# number of SNV in ASM sites
+asm.consesus %<>% merge(snv.is_asm.summ, all.x = T)
+
+
+###################################################
+# model the dist of ASM.count
+
+asm.matrix = pivot_wider(asm.allelicmeth,
+                         names_from = sample,
+                         values_from = dp
+                         )
+
+asm.matrix %<>% subset(select = -(1:2)) %>% as.matrix
+asm.matrix[is.na(asm.matrix)] = 0
+asm.matrix %<>% Matrix(sparse = T)
+asm.matrix[asm.matrix > 0] = 1
+
+E_Xi = colMeans2(asm.matrix)
+E_Xi_Xj = (t(asm.matrix) %*% asm.matrix / nrow(asm.matrix)) %>% as.matrix
+pipj = E_Xi %o% E_Xi
+
+y = E_Xi_Xj[upper.tri(E_Xi_Xj)]
+x = pipj[upper.tri(pipj)]
+
+# x = log10(x)
+# y = log10(y)
+
+plot(x, y, col= 'gray30', xlab = 'pi*pj', ylab = 'E[Xi*Xj]')
+
+# i = y>-3
+# abline(rq(y[i]~x[i]), col = '#E71D36', lwd = 2)
+# abline(0.29, 1, col = '#00A8E8', lwd = 2)
+
+abline(lm(y~x, weights = x), col = '#00A8E8', lwd = 2)
+abline(lm(y~x), col = '#E71D36', lwd = 2)
+
+
+heatmap(E_Xi_Xj, scale = 'none')
+
+# count fits a Pois
+
+table.asm = table(asm.count$count.asm)
+plot(table.asm/nrow(asm.count), xlim = c(1, 20), break)
+
+lamda = nrow(asm.allelicmeth)/nrow(asm.count)
+
+
+set.seed(1016)
+x = 0:20
+prop = n_CG/nrow(asm.count)
+
+# simulate sum of Bers
+p = r_sum_Ber(1e6, prop) %>% table %>% divide_by(1e6)
+points(as.numeric(names(p)), p, type = 'b', col = 'red')
+
+points(x, dpois(x, lamda), type = 'b', col = 'blue')
+
+
+
+## epi-heterozygote
+
+
+
+r_sum_Ber <- function(n, p){
+  
+  sapply(p, function(x){rbinom(n, 1, x)}) %>% rowSums2
+  
+}
+
+
+
+########################################
+# sequence clustering
+########################################
+
+
+asm.cons.bed = read_delim('consistent.asm.common.in.two.categories.bed', delim = '\t', col_names = F)
+
+win = 50
+
+asm.seq.ranges = asm.cons.bed %>%
+  set_colnames(c('chr', 'start', 'end')) %>%
+  subset(chr != 'MT') %>%
+  mutate(strand = '+', start = start - win/2 -1 , end = end + win/2 -1) # 0-based, [a, b]
+
+# complementary strand
+asm.seq.ranges %<>% bind_rows(asm.seq.ranges %>% mutate(strand = '-'))
+
+asm.grange = asm.seq.ranges %>% mutate(chr = paste0('chr', chr)) %>%
+  makeGRangesFromDataFrame
+
+
+
+
+# ref.fa = 'genomic-element/Sscrofa11.1.dna.toplevel.fa'
+# # indexFa(fa)
+# fa <- open(Rsamtools::FaFile(ref.fa))
+# close(fa)
+
+asm.seq = getSeq(BSgenome.Sscrofa.UCSC.susScr11, asm.grange)
+names(asm.seq) = paste0('ASM_CpG_ID:', 1:length(asm.seq))
+asm.seq.string = asm.seq %>% as.character
+
+writeXStringSet(asm.seq, '52bp-of-asm-CpG-sites.common.in.two.categories.fa')
+show(asm.seq[1:10])
+
+
+## global alignment score matrix
+
+# score.pairwise.align = pairwsie_fun_vec(asm.seq.string[1:100],
+#                                            f = function(x, y){
+#                                              pairwiseAlignment(x, y, 
+#                                                                type = "local", 
+#                                                                scoreOnly = T, 
+#                                                                gapOpening = 2, 
+#                                                                gapExtension = 1
+#                                                                )
+#                                            })
+# 
+# heatmap(score.pairwise.align, scale = 'none')
+
+
+
+
+asm.fa = '52bp-of-asm-CpG-sites.fa'
+# fa <- open(Rsamtools::FaFile(asm.fa))
+# # indexFa(fa)
+# # close(fa)
+
+
+asm.seq.string = readDNAStringSet(asm.fa) %>% as.character
+paired.seq = combn(length(asm.seq.string), 2)
+# paired.seq = combn(100, 2)
+
+# 
+# library(foreach)
+# library(doSNOW)
+# library(Biostrings)
+# 
+# # regressions in parallel
+# cl <- makeCluster(20, type="SOCK")
+# registerDoSNOW(cl)
+# 
+# system.time({
+#   score.pairwise.align <-  foreach(
+#     i = 1:ncol(paired.seq),
+#     # i = 1:1000,
+#     .packages = c("Biostrings"),
+#     .combine = c,
+#     .export = c("asm.seq.string", "paired.seq")
+#   ) %dopar%
+#     pairwiseAlignment(asm.seq.string[paired.seq[1, i]], 
+#                       asm.seq.string[paired.seq[2, i]], 
+#                       type = "local", 
+#                       scoreOnly = T, 
+#                       gapOpening = 2, 
+#                       gapExtension = 1
+#     )
+#   
+# })
+# 
+# score.pairwise.align.df = data.frame(t(paired.seq), score.pairwise.align)
+# 
+# readr::write_csv(score.pairwise.align.df, 'score.pairwise.align', col_names = F)
+# 
+# stopCluster(cl)
+
+#################################
+# multiple alignment
+#################################
+
+asm.seq.string = readDNAStringSet(asm.fa)
+# mul.align = DNAMultipleAlignment(asm.seq.string)
+
+sdist <- stringDist(asm.seq.string, method="hamming")
+sdist <- stringDist(asm.seq.string,
+                    method="quality",
+                    type = 'local', 
+                    diag = T,
+                    gapOpening = 2,
+                    gapExtension = 1
+                    )
+sdist.m = as.matrix(sdist)
+diag(sdist.m) = pairwiseAlignment(asm.seq.string[1],
+                                  asm.seq.string[1],
+                                  type = "local",
+                                  scoreOnly = T,
+                                  gapOpening = 2,
+                                  gapExtension = 1)
+
+
+# save(sdist.m, file = 'local-quality-matrix-gap-2-1-asm-seq.RData')
+
+# clust <- hclust(sdist, method = "single")
+# plot(clust, label = F)
+
+######
+# clustering based on align-score matrix
+# 
+# score.pairwise.align = read_delim('paired.seq.out.gz', col_names = F, delim = '\t')
+# 
+# pair_2_matrix <- function(df, diag = 0){
+#   # convert pairwise records to a squared symmetric matrix
+#   
+#   names(df) = c('1', 'X2', 'X3')
+#   m = df %>%
+#     pivot_wider(names_from = X2,
+#                 values_from = X3
+#                 ) %>%
+#     as.matrix
+#   m = m[order(m[,1]), ]
+#   
+#   m[,1] = NA
+#   m %<>% rbind(rep(NA, ncol(m)))
+#   m[is.na(m)] = 0
+#   
+#   m = m + t(m)
+#   
+#   diag(m) = diag
+#   
+#   return(m)
+#   
+# }
+# 
+# score.pairwise.m = pair_2_matrix(score.pairwise.align, 
+#                                  # diag = sdist.m[1,1]
+#                                  diag = pairwiseAlignment(asm.seq.string[1],
+#                                                           asm.seq.string[1],
+#                                                           type = "local",
+#                                                           scoreOnly = T,
+#                                                           gapOpening = 2,
+#                                                           gapExtension = 1)
+#                                  )
+# 
+# 
+# heatmap(score.pairwise.m, scale = 'none')
+
+## SVD approximation of score matrix
+
+svd.sdist = svd(sdist.m)
+
+# save(svd.sdist, file = 'svd-of-score-matrix.RData')
+
+# cum.sv = cumsum(svd.sdist$d^2)/sum(svd.sdist$d^2)
+D = diag(svd.sdist$d)
+diag(D)[101:nrow(D)] = 0
+sdist.svd = svd.sdist$u %*% D %*% t(svd.sdist$v)
+
+# unique the rows
+
+# i = sample.int(nrow(sdist.svd), 1e4, replace = F)
+
+i.keep = !duplicated(sdist.m)
+sdist.uniq = sdist.m[i.non.dup, i.non.dup]
+
+
+set.seed(1016)
+
+
+#######
+# Spectral Clustering
+
+cluster.specc = specc(sdist.uniq,
+                      centers = 15,
+                      kernel = 'besseldot'
+)
+
+#######
+# hclust
+
+# sdist.dist = sdist.uniq[1,1] - sdist.uniq
+# cluster.h = cutree(hclust(as.dist(sdist.dist), method = "centroid"), k = 15)
+# names(cluster.h) = NULL
+# table(cluster.h)
+
+
+
+# save(cluster.specc, file = 'specc.unique.score.seq.besseldot.RData')
+
+# umap
+
+umap.setting = umap.defaults
+umap.setting$n_neighbors = 40
+umap.setting$random_state = 1016
+umap.setting$n_components = 2
+
+reduce_obj = umap::umap(sdist.uniq, method = 'umap-learn', config = umap.setting)
+umap.score.seq = cbind(reduce_obj$layout
+                 # data.frame(cluster = cluster.specc@.Data)
+               ) %>% as.data.frame
+
+reduce_d_umap = cbind(umap.score.seq, data.frame(cluster = cluster.specc@.Data))
+colnames(reduce_d_umap)[1:2] = c('dim1', 'dim2')
+
+# t-SNE
+
+tsne.score.seq = cbind(Rtsne::Rtsne(sdist.uniq,
+                              perplexity = 30,
+                              theta = 0.5,
+                              is_distance = F,
+                              check_duplicates = F,
+                              num_threads = 6
+                              )$Y
+                 # data.frame(cluster = cluster.specc@.Data)
+) %>% as.data.frame 
+
+# save(tsne.score.seq, file = 'tsne-2.unique.local.score.seq.RData')
+
+reduce_d_tsne = cbind(tsne.score.seq, data.frame(cluster = cluster.specc@.Data))
+# reduce_d_tsne = cbind(tsne.score.seq, data.frame(cluster = cluster.h))
+colnames(reduce_d_tsne)[1:2] = c('dim1', 'dim2')
+
+# plot
+
+COLS = c('#f4c610', '#cd0bbc', '#2197e6', '#df526b')
+
+reduce_d = reduce_d_tsne
+
+xyplot(dim2 ~ dim1, reduce_d, pch = '.')
+
+xyplot(dim2 ~ dim1, reduce_d, pch = 16, group = cluster, col = COLS, alpha = 0.4)
+
+plot(reduce_d$dim1, reduce_d$dim2, type = 'n')
+text(reduce_d$dim1, reduce_d$dim2, labels = reduce_d$cluster, col = reduce_d$cluster)
+
+
