@@ -37,6 +37,11 @@ pr.cg = 0.6        # CG context
 pr.ncg = 1/100     # non-CG context
 ```
 
+input: a `.ATCG` file 
+
+
+
+
 ## Biologically consistent ASM CpG (BCA CpG) caller
 
 **call BCA SNVs among a group of cells upon analysing allele-specific methylation (ASM) in each single cells**
@@ -53,7 +58,7 @@ usage
 
 SNV file: `merge_sample.bssnv.simple`
 
- a merged file containing detected SNV sites in each samples, four columns of chromosome, reference base, postion, and sample, no header line
+ a merged file containing detected SNV sites in each samples, four columns of chromosome, reference base, postion, and sample. no header line
 
 ```
 1       T       1554    AF1_12
@@ -66,7 +71,7 @@ SNV file: `merge_sample.bssnv.simple`
 
 ASM file: `ASM_site_methpipe_allelicmeth_DP_merge.asm`
 
- a merged file containing detected ASM CpGs in each cells, 12 columns of 'chr', 'pos', 'strand', 'CpG', 'p_value', 'dp', 'MM', 'MU', 'UM', 'UU', and 'sample', no header line. The first 11 clomuns are returned by `methpipe::allelicmeth`
+ a merged file containing detected ASM CpGs in each cells, 12 columns of 'chr', 'pos', 'strand', 'CpG', 'p_value', 'dp', 'MM', 'MU', 'UM', 'UU', and 'sample'. no header line. The first 11 clomuns are returned by `methpipe::allelicmeth`
 
 
 ```
@@ -82,4 +87,19 @@ ASM file: `ASM_site_methpipe_allelicmeth_DP_merge.asm`
 **output file:**
 
 `./output/asm.consensus.tsv`
+
+
+|variable | discription|
+|  ----  | ----  |
+|chr| chromosome|
+|pos| position|
+|count.cov | effective coverage|
+|count.asm| count of cells indicating ASM in this CpG|
+|chi.sq| Chi-square statistic|
+|p.chisq| *p*-value of $\chi^2$ test, minor method|
+|lambda| lambda ($\lambda$) statistic|
+|p.pois|*p*-value of Poisson test, **major** method|
+
+
+
 
