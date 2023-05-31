@@ -51,8 +51,8 @@ pe = 3/100/3
 p = pm + pe
 
 # methylation rate/proportion 
-pr.cg = 0.6        # CG content
-pr.ncg = 1/100     # non-CG content
+pr.cg = 0.6        # CG context
+pr.ncg = 1/100     # non-CG context
 
 
 # transition prob of haploidy
