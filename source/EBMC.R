@@ -28,11 +28,13 @@ arg <- add_argument(arg, "--rounds", help="rounds of iteration",
 
 argv <- parse_args(arg)
 
-# assert_that(!is.na(argv$input))
-assert_that(!is.na(argv$output))
-assert_that(!all(is.na(c(argv$CG, argv$prior))))
 
-if (length(argv$prior) == 3 & all(!is.na(argv$prior))) {
+assert_that(!anyNA(argv$output))
+assert_that(!anyNA(argv$CG))
+assert_that(!anyNA(argv$prior))
+
+
+if (length(argv$prior) == 3 & (!anyNA(argv$prior))) {
   r = argv$prior
 } else if(CG){
   r = c(0.59, 0.4, 0.01)
@@ -42,7 +44,7 @@ if (length(argv$prior) == 3 & all(!is.na(argv$prior))) {
 
 # input: stdio or file
 
-if(is.na(argv$input)){
+if(anyNA(argv$input)){
   # read counts from stdio
   count = base::as.matrix(readr::read_delim(stdin(), 
                                             delim = '\t', 
@@ -76,7 +78,8 @@ if(is.na(argv$input)){
 # count = prob.1.51.chg
 
 
-## sqrt-transform of DP 
+## sqrt-transform of large DP 
+
 DP_max = 60
 k = DP_max - sqrt(DP_max)
 

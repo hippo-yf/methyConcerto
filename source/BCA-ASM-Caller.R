@@ -15,7 +15,7 @@ library(magrittr)
 
 #############################################################################################
 
-snv = read_delim('snv-10K-merge.simple', 
+snv = read_delim('./data/snv-10K-merge.simple.gz', 
                  delim = '\t', 
                  col_names = F, 
                  col_types = cols(X1 = col_character()),
@@ -25,11 +25,11 @@ names(snv)= c('chr', 'nuc', 'pos', 'sample')
 
 
 # methpipe allelicmeth
-asm.allelicmeth = read_delim('methpipe-10K-merge.asm', 
+asm.allelicmeth = read_delim('./data/methpipe-10K-merge.asm.gz', 
                              delim = '\t', 
                              col_names = F,
                              num_threads = 4
-                             )
+)
 colnames(asm.allelicmeth) = 
   c('chr', 'pos', 'strand', 'CpG', 'p_value', 'dp', 'MM', 'MU', 'UM', 'UU', 'sample')
 
@@ -87,7 +87,7 @@ asm.allelicmeth %<>% replace_na(list(is_snv = F))
 is_snv = asm.allelicmeth %>% group_by(CpG_id) %>%
   summarise(is_snv = any(is_snv)) %>%
   arrange(CpG_id)
-  
+
 # asm.allelicmeth = merge(asm.allelicmeth %>% subset(duplicated(.$CpG_id)),
 #                         is_snv)
 
@@ -115,7 +115,7 @@ CpG_with_asm = asm.allelicmeth %>%
             count.asm = sum(is_asm),
             count.snv = sum(is_snv),
             lambda = sum(pi*(!is_snv))
-            ) %>%
+  ) %>%
   ungroup
 
 #############################################################################################
@@ -142,7 +142,7 @@ CpG_with_asm %<>% transmute(chr = chr,
                             p.chisq = p.chisq,
                             lambda = lambda,
                             p.pois = p.pois
-                            )
+)
 
 #############################################################################################
 
@@ -153,7 +153,7 @@ asm.cons = CpG_with_asm %>% subset(p.pois < 0.001 &
                                      count.cov >= 10 &
                                      (count.asm-count.snv) >= 5 &
                                      (count.asm-count.snv)/(count.cov-count.snv) >= 0.7
-                                   )
+)
 
 write_tsv(asm.cons, file = './output/asm.consensus.tsv')
 

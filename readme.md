@@ -11,7 +11,7 @@ Determinate discrete methyation status for each cytosine from C/T read counts. T
 
 process CG and nonCG sites seperately
 
-`zcat ./data/sample.CGmap.gz | cut -f 7,8 | Rscript ./source/BS-SNV-Caller.R --output ./output/sample.prob --summary ./output/sample.methycall --CG TRUE`
+`zcat ./data/sample.CGmap.gz | cut -f 7,8 | Rscript ./source/EBMC.R --output ./output/sample.prob --summary ./output/sample.methycall --CG TRUE`
 
 ### parameters
 
@@ -82,7 +82,7 @@ SNV calling with bisuifite-converted sequencing data
 
 ### usage
 
-`zcat ./data/sample.ATCG.gz | awk '$6+$7+$8+$9+$11+$12+$13+$14>=10' | Rscript ./source/BS-SNV-Caller.R | gzip > ./output/sample.bssnv.gz`
+`zcat ./data/sample.ATCGmap.gz | awk '$6+$7+$8+$9+$11+$12+$13+$14>=10' | Rscript ./source/BS-SNV-Caller.R | gzip > ./output/sample.bssnv.gz`
 
 ### parameters
 
@@ -121,6 +121,18 @@ pr.ncg = 1/100     # non-CG context
 |11-12| coverage depths of Watson and Crick strands|
 |13| probability of homozygote|
 
+```
+1	C	1550	CHG	CT	9.79052e-01	7.46622e-07	1.05278e-02	9.89471e-01	7.46622e-07	14	0	0.97916
+1	T	1551	--	--	9.78959e-01	7.46623e-07	9.89423e-01	1.05750e-02	7.46623e-07	14	0	0.97907
+1	G	1552	CHG	CA	9.99995e-01	7.55074e-07	7.55074e-07	7.55074e-07	9.99998e-01	14	0	1.00000
+1	C	1553	CHG	CT	9.79052e-01	7.46622e-07	1.05278e-02	9.89471e-01	7.46622e-07	14	0	0.97916
+1	T	1554	--	--	2.13408e-24	3.49345e-05	6.55191e-03	3.49345e-05	9.93378e-01	14	0	0.98676
+1	G	1555	CHG	CA	9.99995e-01	7.55074e-07	7.55074e-07	7.55074e-07	9.99998e-01	14	0	1.00000
+1	C	1556	CHH	CT	9.79052e-01	7.46622e-07	1.05278e-02	9.89471e-01	7.46622e-07	14	0	0.97916
+1	T	1557	--	--	9.78959e-01	7.46623e-07	9.89423e-01	1.05750e-02	7.46623e-07	14	0	0.97907
+1	C	1558	CHH	CT	9.79052e-01	7.46622e-07	1.05278e-02	9.89471e-01	7.46622e-07	14	0	0.97916
+1	T	1559	--	--	9.78959e-01	7.46623e-07	9.89423e-01	1.05750e-02	7.46623e-07	14	0	0.97907
+```
 
 ## Biologically consistent ASM CpG (BCA CpG) caller
 
@@ -133,7 +145,7 @@ Call BCA SNVs among a group of cells upon the analysis of allele-specific methyl
 
 ### input files
 
-SNV file: `merge_sample.bssnv.simple`
+SNV file: `./data/snv-10K-merge.simple.gz`
 
  a merged file containing detected SNV sites in each samples, four columns of chromosome, reference base, postion, and sample. no header line
 
@@ -146,7 +158,7 @@ SNV file: `merge_sample.bssnv.simple`
 ```
 
 
-ASM file: `ASM_site_methpipe_allelicmeth_DP_merge.asm`
+ASM file: `./data/methpipe-10K-merge.asm.gz`
 
  a merged file containing detected ASM CpGs in each cells, 12 columns of 'chr', 'pos', 'strand', 'CpG', 'p_value', 'dp', 'MM', 'MU', 'UM', 'UU', and 'sample'. no header line. The first 11 clomuns are returned by `methpipe::allelicmeth`
 
