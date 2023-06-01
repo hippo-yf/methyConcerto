@@ -116,7 +116,7 @@ pr.ncg = 1/100     # non-CG context
 |column | discription|
 |  ----  | ----  |
 |1-5| chromosome, reference base, position, CG/CHG/CHH, dinucleoties. They are same with first 5 columns of `.ATCG` file|
-|6| *p*-value of SNV (different from reference) |
+|6| *p*-value testing SNV (different from reference) which means the posterior probability of reference base, the smaller, the more likely to be a SNV, homozygous or heterzygous |
 |7-10| estimated allele frequencies of A,T,C, and G respectively |
 |11-12| coverage depths of Watson and Crick strands|
 |13| probability of homozygote|
