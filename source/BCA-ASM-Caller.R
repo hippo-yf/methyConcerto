@@ -5,17 +5,17 @@ library(matrixStats)
 library(tidyverse)
 library(magrittr)
 
-library(MASS)
-library(e1071)
-library(quantreg)
-library(splines)
-library(Matrix)
-library(sparseMatrixStats)
-library(lattice)
+# library(MASS)
+# library(e1071)
+# library(quantreg)
+# library(splines)
+# library(Matrix)
+# library(sparseMatrixStats)
+# library(lattice)
 
 #############################################################################################
 
-snv = read_delim('merge_sample.bssnv.simple', 
+snv = read_delim('snv-10K-merge.simple', 
                  delim = '\t', 
                  col_names = F, 
                  col_types = cols(X1 = col_character()),
@@ -25,7 +25,7 @@ names(snv)= c('chr', 'nuc', 'pos', 'sample')
 
 
 # methpipe allelicmeth
-asm.allelicmeth = read_delim('ASM_site_methpipe_allelicmeth_DP_merge.asm', 
+asm.allelicmeth = read_delim('methpipe-10K-merge.asm', 
                              delim = '\t', 
                              col_names = F,
                              num_threads = 4

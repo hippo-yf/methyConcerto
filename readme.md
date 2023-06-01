@@ -178,6 +178,15 @@ ASM file: `ASM_site_methpipe_allelicmeth_DP_merge.asm`
 |p.pois|*p*-value of Poisson test, **major** method|
 
 
+```
+chr	pos	count.cov	count.asm	count.snv	chi.sq	p.chisq	lambda	p.pois
+16	8868	48	47	2	NA	NA	26.758615249594396	4.508674530477948e-4
+16	9276	49	47	4	Inf	0	26.067905464137255	8.393246565554962e-4
+16	9284	50	47	0	Inf	0	29.110167311050276	8.200382170259079e-4
+16	9507	50	47	1	Inf	0	28.493378989882395	9.142007577857896e-4
+8	1661	48	47	0	Inf	0	28.361876688204955	4.803623038606877e-4
+```
+
 ## Citations
 
 - Xiaolong Yuan, Na Chen, Yance Feng, et al., Single-cell multi-omics profiling reveals key regulatory mechanisms that poise germinal vesicle oocytes for meiotic resumption in pigs. *Cellular and Molecular Life Sciences*, 2023, under review.
