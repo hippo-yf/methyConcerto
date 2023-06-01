@@ -1,6 +1,12 @@
 # methyConcerto
 
-Refined data analyses for **single-cell bisulfite-based sequencing** in DNA methylation researches
+Refined data analyses for **single-cell bisulfite-based sequencing** in DNA methylation researches, including
+
+- Empirical Bayesian Methylation Caller (EBMC): Determinate discrete methyation status for each cytosine
+- BS-SNV-Caller: SNV calling with bisuifite-converted sequencing data
+- Biologically consistent ASM CpG (BCA CpG) caller: consistent allele-specific methylation (ASM) among a group of samples (cells), rather than occuring in individual cells occasionally
+
+
 
 
 ## Empirical Bayesian Methylation Caller (EBMC)
@@ -136,7 +142,7 @@ pr.ncg = 1/100     # non-CG context
 
 ## Biologically consistent ASM CpG (BCA CpG) caller
 
-Call BCA SNVs among a group of cells upon the analysis of allele-specific methylation (ASM) in each single cells. The BCA ASM is ASM consistent among a group of samples (cells). The *p*-value is evaluated under the null hypothesis that ASM CpGs are distributed randomly in the whole genome and independently among cells.
+Call BCA allele-specific methylation (ASM) among a group of cells upon the ASM analysis in each single cells. The BCA ASM is ASM consistent among a group of samples (cells). The *p*-value is evaluated under the null hypothesis that ASM CpGs are distributed randomly in the whole genome and independently among cells.
 
 
 ### usage
@@ -160,7 +166,7 @@ SNV file: `./data/snv-10K-merge.simple.gz`
 
 ASM file: `./data/methpipe-10K-merge.asm.gz`
 
- a merged file containing detected ASM CpGs in each cells, 12 columns of 'chr', 'pos', 'strand', 'CpG', 'p_value', 'dp', 'MM', 'MU', 'UM', 'UU', and 'sample'. no header line. The first 11 clomuns are returned by `methpipe::allelicmeth`
+a merged file containing detected ASM CpGs in each cells, 12 columns of 'chr', 'pos', 'strand', 'CpG', 'p_value', 'dp', 'MM', 'MU', 'UM', 'UU', and 'sample'. no header line. The first 11 clomuns are returned by `methpipe::allelicmeth`
 
 
 ```
