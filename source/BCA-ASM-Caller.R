@@ -13,7 +13,7 @@ library(Matrix)
 library(sparseMatrixStats)
 library(lattice)
 
-
+#############################################################################################
 
 snv = read_delim('merge_sample.bssnv.simple', 
                  delim = '\t', 
@@ -30,12 +30,15 @@ asm.allelicmeth = read_delim('ASM_site_methpipe_allelicmeth_DP_merge.asm',
                              col_names = F,
                              num_threads = 4
                              )
-colnames(asm.allelicmeth) = c('chr', 'pos', 'strand', 'CpG', 'p_value', 'dp', 'MM', 'MU', 'UM', 'UU', 'sample')
+colnames(asm.allelicmeth) = 
+  c('chr', 'pos', 'strand', 'CpG', 'p_value', 'dp', 'MM', 'MU', 'UM', 'UU', 'sample')
 
 # asm.allelicmeth = asm.allelicmeth[sample.int(nrow(asm.allelicmeth), 5e4), ]
 
-
+#############################################################################################
+## effective coverage
 ## both covered at least 5 reads
+
 sDP = 5
 # asm.allelicmeth %<>% subset((MM>=sDP & UU>=sDP) | (MU>=sDP & UM>=sDP))
 
@@ -53,6 +56,8 @@ asm.count = asm.allelicmeth %>%
   group_by(sample) %>%
   summarise(count.CG = n(), count.asm = sum(is_asm), pi = count.asm/count.CG)
 
+#############################################################################################
+## C or G mutation in a CpG disables the CpG
 
 asm.allelicmeth = asm.allelicmeth %>% 
   # subset(is_asm) %>% 
@@ -76,7 +81,6 @@ asm.allelicmeth = asm.allelicmeth %>%
             sort = F)) %>%
   ungroup
 
-# asm.allelicmeth = bind_rows(asm.allelicmeth)
 
 asm.allelicmeth %<>% replace_na(list(is_snv = F))
 
@@ -93,11 +97,13 @@ asm1 = asm.allelicmeth %>% subset(duplicated(.$CpG_id)) %>%
 
 asm.allelicmeth = bind_cols(asm1, is_snv[, "is_snv"])
 
+#############################################################################################
 
 prop = asm.count$pi %>% set_names(asm.count$sample)
 
 
 # mark pi of Ber(pi) of each CpG site covered
+
 asm.allelicmeth %<>% mutate(pi = prop[sample])
 
 ## CpG table with asm marked
@@ -112,21 +118,37 @@ CpG_with_asm = asm.allelicmeth %>%
             ) %>%
   ungroup
 
+#############################################################################################
+
 ## test each CpG is a consistent ASM site 
 
 # using Chi square test of the sum of p.values
-CpG_with_asm %<>% mutate(p_chisq = pchisq(chi.sq, df = count.cov - count.snv, lower.tail = F))
+CpG_with_asm %<>% 
+  mutate(p.chisq = pchisq(chi.sq, df = count.cov - count.snv, lower.tail = F))
 
 
 ## using a Pois dist of the asm count
-CpG_with_asm %<>% mutate(p_pois = ppois(count.asm - count.snv, lambda = lambda, lower.tail = F))
+CpG_with_asm %<>% 
+  mutate(p.pois = ppois(count.asm - count.snv, lambda = lambda, lower.tail = F))
 
+## reorder columns
 
-#####################################################################################################
+CpG_with_asm %<>% transmute(chr = chr, 
+                            pos = pos,
+                            count.cov = count.cov,
+                            count.asm = count.asm,
+                            count.snv = count.snv,
+                            chi.sq = chi.sq,
+                            p.chisq = p.chisq,
+                            lambda = lambda,
+                            p.pois = p.pois
+                            )
 
-## consistent ASM sites
+#############################################################################################
 
-asm.cons = CpG_with_asm %>% subset(p_pois < 0.001 & 
+## conditions of BCA ASM CpGs
+
+asm.cons = CpG_with_asm %>% subset(p.pois < 0.001 & 
                                      lambda > 0 & 
                                      count.cov >= 10 &
                                      (count.asm-count.snv) >= 5 &

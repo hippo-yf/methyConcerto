@@ -5,16 +5,84 @@
 
 ## Empirical Bayesian Methylation Caller (EBMC)
 
-**Determinate discrete methyation status for each cytosine from C/T read counts**
+Determinate discrete methyation status for each cytosine from C/T read counts. The methylation state of a cytosine is discrete: methylated (1), unmethylated (0), and hemimethyalted (0.5). EBMC gives the predicted state with corresponding posterior probability.
+
+### usage
+
+process CG and nonCG sites seperately
+
+`zcat ./data/sample.CGmap.gz | cut -f 7,8 | Rscript ./source/BS-SNV-Caller.R --output ./output/sample.prob --summary ./output/sample.methycall --CG TRUE`
+
+### parameters
+
+|param | discription|
+|  ----  | ----  |
+|--CG  |boolean, TRUE or FALSE, CG site or not |
+|--prior| prior probabilities, defaults: `(0.59, 0.4, 0.01)` for CG and `(0.01, 0.98, 0.01)` for nonCG |
+|--error_rate| prior rate of C/T mis-detction, default: 0.01|
+|--Poisson_approx| threshold of depth the Poisson approximation applied, default: 20|
+|--rounds|rounds of iteration, default: 2|
+
+
+### input 
+
+`.CGmap` file for a sample/cell:
+
+ ./data/sample.CGmap.gz, returned by `baseeker2/3` or `cgmaptools`
+
+### output
+
+`.prob` probability file with same \#rows of input: two columns
+
+|column | discription|
+|  ----  | ----  |
+|1| predicted methylation state with maximum posterior probability|
+|2| posterior probability of the predicted state|
+
+```
+0       0.99911
+0       0.990017
+0       0.996467
+0       0.996467
+1       0.99932
+0.5     0.800168
+0.5     0.800168
+0       0.999775
+0       0.999775
+0       0.996467
+0       0.990017
+1       0.999995
+1       0.999995
+```
+
+
+`.methycall` summary file
+
+|var | discription|
+|  ----  | ----  |
+|Rows|number of input rows/sites|
+|methylated(1)| proportion of methylated cytosines  |
+|unmethylated(0)| proportion of unmethylated cytosines  |
+|epi-heterozygous(0.5)| proportion of hemimethylated cytosines  |
+|error rate of measurement (0->1 or 1->0)| error rate of unexpected reads, errors due to libraray construction, sequencing, alignment etc.|
+
+
+```
+Rows:   8845123
+methylated(1):  0.705469
+unmethylated(0):        0.279757
+epi-heterozygous(0.5):  0.014774
+error rate of measurement (0->1 or 1->0):       0.001465
+```
 
 
 ## BS-SNV-Caller
 
-**SNV calling with bisuifite-converted sequencing data**
+SNV calling with bisuifite-converted sequencing data
 
 ### usage
 
-`zcat ./data/sample.ATCG.gz | awk '$6+$7+$8+$9+$11+$12+$13+$14>=10' | Rscript ./source/BS-SNV-Caller.R | gzip > sample.bssnv.gz`
+`zcat ./data/sample.ATCG.gz | awk '$6+$7+$8+$9+$11+$12+$13+$14>=10' | Rscript ./source/BS-SNV-Caller.R | gzip > ./output/sample.bssnv.gz`
 
 ### parameters
 
@@ -37,24 +105,33 @@ pr.cg = 0.6        # CG context
 pr.ncg = 1/100     # non-CG context
 ```
 
-input: a `.ATCG` file 
+### input
 
+ a `.ATCG` file, returned by `bsseeker2/3` or `cgmaptools`
 
+### output
+
+13 columns, no header line
+
+|column | discription|
+|  ----  | ----  |
+|1-5| chromosome, reference base, position, CG/CHG/CHH, dinucleoties. They are same with first 5 columns of `.ATCG` file|
+|6| *p*-value of SNV (different from reference) |
+|7-10| estimated allele frequencies of A,T,C, and G respectively |
+|11-12| coverage depths of Watson and Crick strands|
+|13| probability of homozygote|
 
 
 ## Biologically consistent ASM CpG (BCA CpG) caller
 
-**call BCA SNVs among a group of cells upon analysing allele-specific methylation (ASM) in each single cells**
+Call BCA SNVs among a group of cells upon the analysis of allele-specific methylation (ASM) in each single cells. The BCA ASM is ASM consistent among a group of samples (cells). The *p*-value is evaluated under the null hypothesis that ASM CpGs are distributed randomly in the whole genome and independently among cells.
 
-usage
+
+### usage
 
 `source ./source/BCA-ASM-Caller.R`
 
-
-**input files** :
-
-
-
+### input files
 
 SNV file: `merge_sample.bssnv.simple`
 
@@ -84,7 +161,7 @@ ASM file: `ASM_site_methpipe_allelicmeth_DP_merge.asm`
 ```
 
 
-**output file:**
+### output file 
 
 `./output/asm.consensus.tsv`
 
@@ -93,13 +170,15 @@ ASM file: `ASM_site_methpipe_allelicmeth_DP_merge.asm`
 |  ----  | ----  |
 |chr| chromosome|
 |pos| position|
-|count.cov | effective coverage|
+|count.cov | count of cells with this CpG effectively covered|
 |count.asm| count of cells indicating ASM in this CpG|
-|chi.sq| Chi-square statistic|
+|chi.sq| Chi-square ($\chi^2$) statistic|
 |p.chisq| *p*-value of $\chi^2$ test, minor method|
 |lambda| lambda ($\lambda$) statistic|
 |p.pois|*p*-value of Poisson test, **major** method|
 
 
+## Citations
 
+- Xiaolong Yuan, Na Chen, Yance Feng, et al., Single-cell multi-omics profiling reveals key regulatory mechanisms that poise germinal vesicle oocytes for meiotic resumption in pigs. *Cellular and Molecular Life Sciences*, 2023, under review.
 
