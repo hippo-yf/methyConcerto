@@ -1,6 +1,6 @@
 # methyConcerto
 
-**Refined data analyses for single-cell bisulfite-based sequencing**
+Refined data analyses for **single-cell bisulfite-based sequencing** in DNA methylation researches
 
 
 ## Empirical Bayesian Methylation Caller (EBMC)
@@ -68,11 +68,11 @@ process CG and nonCG sites seperately
 
 
 ```
-Rows:   8845123
-methylated(1):  0.705469
-unmethylated(0):        0.279757
-epi-heterozygous(0.5):  0.014774
-error rate of measurement (0->1 or 1->0):       0.001465
+Rows:	10000
+methylated(1):	0.188000
+unmethylated(0):	0.807900
+epi-heterozygous(0.5):	0.004100
+error rate of measurement (0->1 or 1->0):	0.002497
 ```
 
 
