@@ -21,7 +21,7 @@ process CG and nonCG sites seperately
 
 ### parameters
 
-|param | discription|
+|param | description|
 |  ----  | ----  |
 |--CG  |boolean, TRUE or FALSE, CG site or not |
 |--prior| prior probabilities, defaults: `(0.59, 0.4, 0.01)` for CG and `(0.01, 0.98, 0.01)` for nonCG |
@@ -64,7 +64,7 @@ process CG and nonCG sites seperately
 
 `.methycall` summary file
 
-|var | discription|
+|var | description|
 |  ----  | ----  |
 |Rows|number of input rows/sites|
 |methylated(1)| proportion of methylated cytosines  |
@@ -119,7 +119,7 @@ pr.ncg = 1/100     # non-CG context
 
 13 columns, no header line
 
-|column | discription|
+|column | description|
 |  ----  | ----  |
 |1-5| chromosome, reference base, position, CG/CHG/CHH, dinucleoties. They are same with first 5 columns of `.ATCG` file|
 |6| ***p*-value** testing SNV (different from reference) which means the posterior probability of reference base, the smaller, the more likely to be a SNV, homozygous or heterzygous |
@@ -184,7 +184,7 @@ a merged file containing detected ASM CpGs in each cells, 12 columns of 'chr', '
 `./output/asm.consensus.tsv`
 
 
-|variable | discription|
+|variable | description|
 |  ----  | ----  |
 |chr| chromosome|
 |pos| position|
