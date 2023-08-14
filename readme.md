@@ -207,5 +207,5 @@ chr	pos	count.cov	count.asm	count.snv	chi.sq	p.chisq	lambda	p.pois
 
 ## Citations
 
-- Xiaolong Yuan, Na Chen, Yance Feng, et al., Single-cell multi-omics profiling reveals key regulatory mechanisms that poise germinal vesicle oocytes for meiotic resumption in pigs. *Cellular and Molecular Life Sciences*, 2023, under review.
+- Yuan X, Chen N, Feng Y, et al. *Single-cell multi-omics profiling reveals key regulatory mechanisms that poise germinal vesicle oocytes for maturation in pigs.* ***Cell Mol Life Sci.*** 2023;80(8):222. Published 2023 Jul 22. doi:10.1007/s00018-023-04873-x
 
